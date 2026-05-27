@@ -1,0 +1,376 @@
+"""Defining a custom Federated Summing strategy.
+
+This custom strategy is based on the FedAvg implementation provided by Flower, with the necessary modifications.
+"""
+
+from logging import WARNING, INFO
+from typing import Callable, Optional, Union
+import json
+
+from flwr.common import (
+    EvaluateIns,
+    EvaluateRes,
+    FitIns,
+    FitRes,
+    MetricsAggregationFn,
+    NDArrays,
+    Parameters,
+    Scalar,
+    ndarrays_to_parameters,
+    parameters_to_ndarrays,
+)
+from flwr.common.logger import log
+from flwr.server.client_manager import ClientManager
+from flwr.server.client_proxy import ClientProxy
+
+from app.aggregate import aggregate_sum, aggregate_inplace_sum
+from app.strategy import Strategy
+
+import numpy as np
+from functools import partial, reduce
+
+WARNING_MIN_AVAILABLE_CLIENTS_TOO_LOW = """
+Setting `min_available_clients` lower than `min_fit_clients` or
+`min_evaluate_clients` can cause the server to fail when there are too few clients
+connected to the server. `min_available_clients` must be set to a value larger
+than or equal to the values of `min_fit_clients` and `min_evaluate_clients`.
+"""
+
+
+# pylint: disable=line-too-long
+class FedSum(Strategy):
+    """Federated Summing strategy.
+
+    Parameters
+    ----------
+    fraction_fit : float, optional
+        Fraction of clients used during training. In case `min_fit_clients`
+        is larger than `fraction_fit * available_clients`, `min_fit_clients`
+        will still be sampled. Defaults to 1.0.
+    fraction_evaluate : float, optional
+        Fraction of clients used during validation. In case `min_evaluate_clients`
+        is larger than `fraction_evaluate * available_clients`,
+        `min_evaluate_clients` will still be sampled. Defaults to 1.0.
+    min_fit_clients : int, optional
+        Minimum number of clients used during training. Defaults to 2.
+    min_evaluate_clients : int, optional
+        Minimum number of clients used during validation. Defaults to 2.
+    min_available_clients : int, optional
+        Minimum number of total clients in the system. Defaults to 2.
+    evaluate_fn : Optional[Callable[[int, NDArrays, Dict[str, Scalar]],Optional[Tuple[float, Dict[str, Scalar]]]]]
+        Optional function used for validation. Defaults to None.
+    on_fit_config_fn : Callable[[int], Dict[str, Scalar]], optional
+        Function used to configure training. Defaults to None.
+    on_evaluate_config_fn : Callable[[int], Dict[str, Scalar]], optional
+        Function used to configure validation. Defaults to None.
+    accept_failures : bool, optional
+        Whether or not accept rounds containing failures. Defaults to True.
+    initial_parameters : Parameters, optional
+        Initial global model parameters.
+    fit_metrics_aggregation_fn : Optional[MetricsAggregationFn]
+        Metrics aggregation function, optional.
+    evaluate_metrics_aggregation_fn : Optional[MetricsAggregationFn]
+        Metrics aggregation function, optional.
+    inplace : bool (default: True)
+        Enable (True) or disable (False) in-place aggregation of model updates.
+    """
+
+    # pylint: disable=too-many-arguments,too-many-instance-attributes, line-too-long
+    def __init__(
+        self,
+        *,
+        fraction_fit: float = 1.0,
+        fraction_evaluate: float = 1.0,
+        min_fit_clients: int = 2,
+        min_evaluate_clients: int = 2,
+        min_available_clients: int = 2,
+        evaluate_fn: Optional[
+            Callable[
+                [int, NDArrays, dict[str, Scalar]],
+                Optional[tuple[float, dict[str, Scalar]]],
+            ]
+        ] = None,
+        on_fit_config_fn: Optional[Callable[[int], dict[str, Scalar]]] = None,
+        on_evaluate_config_fn: Optional[Callable[[int], dict[str, Scalar]]] = None,
+        accept_failures: bool = True,
+        initial_parameters: Optional[Parameters] = None,
+        fit_metrics_aggregation_fn: Optional[MetricsAggregationFn] = None,
+        evaluate_metrics_aggregation_fn: Optional[MetricsAggregationFn] = None,
+        inplace: bool = True,
+    ) -> None:
+        super().__init__()
+
+        if (
+            min_fit_clients > min_available_clients
+            or min_evaluate_clients > min_available_clients
+        ):
+            log(WARNING, WARNING_MIN_AVAILABLE_CLIENTS_TOO_LOW)
+
+        self.fraction_fit = fraction_fit
+        self.fraction_evaluate = fraction_evaluate
+        self.min_fit_clients = min_fit_clients
+        self.min_evaluate_clients = min_evaluate_clients
+        self.min_available_clients = min_available_clients
+        self.evaluate_fn = evaluate_fn
+        self.on_fit_config_fn = on_fit_config_fn
+        self.on_evaluate_config_fn = on_evaluate_config_fn
+        self.accept_failures = accept_failures
+        self.initial_parameters = initial_parameters
+        self.fit_metrics_aggregation_fn = fit_metrics_aggregation_fn
+        self.evaluate_metrics_aggregation_fn = evaluate_metrics_aggregation_fn
+        self.inplace = inplace
+
+    def __repr__(self) -> str:
+        """Compute a string representation of the strategy."""
+        rep = f"FedSum(accept_failures={self.accept_failures})"
+        return rep
+
+    def num_fit_clients(self, num_available_clients: int) -> tuple[int, int]:
+        """Return the sample size and the required number of available clients."""
+        num_clients = int(num_available_clients * self.fraction_fit)
+        return max(num_clients, self.min_fit_clients), self.min_available_clients
+
+    def initialize_parameters(
+        self, client_manager: ClientManager
+    ) -> Optional[Parameters]:
+        """Initialize global model parameters."""
+        initial_parameters = self.initial_parameters
+        self.initial_parameters = None  # Don't keep initial parameters in memory
+        return initial_parameters
+
+    # def configure_fit(
+    #     self, server_round: int, parameters: Parameters, client_manager: ClientManager
+    # ) -> list[tuple[ClientProxy, FitIns]]:
+    #     """Configure the next round of training."""
+    #     config = {}
+    #     if self.on_fit_config_fn is not None:
+    #         # Custom fit config function provided
+    #         config = self.on_fit_config_fn(server_round)
+    #     fit_ins = FitIns(parameters, config)
+
+    #     # Sample clients
+    #     sample_size, min_num_clients = self.num_fit_clients(
+    #         client_manager.num_available()
+    #     )
+    #     clients = client_manager.sample(
+    #         num_clients=sample_size, min_num_clients=min_num_clients
+    #     )
+
+    #     # Return client/config pairs
+    #     return [(client, fit_ins) for client in clients]
+
+    # def aggregate_fit(
+    #     self,
+    #     server_round: int,
+    #     results: list[tuple[ClientProxy, FitRes]],
+    #     failures: list[Union[tuple[ClientProxy, FitRes], BaseException]],
+    # ) -> tuple[Optional[Parameters], dict[str, Scalar]]:
+    #     """Aggregate fit results using weighted average."""
+    #     if not results:
+    #         return None, {}
+    #     # Do not aggregate if there are failures and failures are not accepted
+    #     if not self.accept_failures and failures:
+    #         return None, {}
+
+    #     if self.inplace:
+    #         # Does in-place weighted average of results
+    #         aggregated_ndarrays = aggregate_inplace_sum(results)
+    #     else:
+    #         # Convert results
+    #         weights_results = [
+    #             (parameters_to_ndarrays(fit_res.parameters))
+    #             for _, fit_res in results
+    #         ]
+    #         aggregated_ndarrays = aggregate_sum(weights_results)
+
+    #     parameters_aggregated = ndarrays_to_parameters(aggregated_ndarrays)
+
+    #     # Aggregate custom metrics if aggregation fn was provided
+    #     metrics_aggregated = {}
+
+    #     return parameters_aggregated, metrics_aggregated
+    def configure_fit(
+        self, server_round: int, parameters: Parameters, client_manager: ClientManager
+    ) -> list[tuple[ClientProxy, FitIns]]:
+        """Configure the next round of training."""
+        config = {}
+        if self.on_fit_config_fn is not None:
+            config = self.on_fit_config_fn(server_round)
+
+        # NOTE: added round number to config
+        config["round_number"] = server_round
+
+        # if server_round == 2:
+        #     this_round_agg = parameters_to_ndarrays(parameters)[0]
+        #     config["for_eigen"] = json.dumps(this_round_agg.tolist())
+
+        # Extract matrix from parameters if it exists (for rounds > 1)
+        # instead of saving to self.aggregated_matrix
+        # if server_round > 1:
+        aggregated_matrix = parameters_to_ndarrays(parameters)[0]
+        config["aggregated_matrix"] = json.dumps(aggregated_matrix.tolist())
+
+        fit_ins = FitIns(parameters, config)
+
+        # Sample clients
+        sample_size, min_num_clients = self.num_fit_clients(
+            client_manager.num_available()
+        )
+        clients = client_manager.sample(
+            num_clients=sample_size, min_num_clients=min_num_clients
+        )
+
+        return [(client, fit_ins) for client in clients]
+
+    def aggregate_fit(
+        self,
+        server_round: int,
+        results: list[tuple[ClientProxy, FitRes]],
+        failures: list[Union[tuple[ClientProxy, FitRes], BaseException]],
+    ) -> tuple[Optional[Parameters], dict[str, Scalar]]:
+        """Aggregate fit results."""
+
+        if not results:
+            return None, {}
+
+        metrics = [fit_res.metrics for _, fit_res in results]
+        for i, m in enumerate(metrics):
+            log(INFO, f" Client {i}: {m}")
+
+        # Do not aggregate if there are failures and they are not accepted
+        if not self.accept_failures and failures:
+            return None, {}
+
+        if self.inplace:
+            aggregated_ndarrays = aggregate_inplace_sum(results)
+        else:
+            weights_results = [
+                (parameters_to_ndarrays(fit_res.parameters)) for _, fit_res in results
+            ]
+            aggregated_ndarrays = aggregate_sum(weights_results)
+
+        # NOTE: Compute the matrix multiplication: K @ inv(L)
+        # if server_round == 1:
+        #     aggregated_matrix = aggregated_ndarrays[0] # old for when was passing for eigen
+        # elif server_round > 1:
+        if len(aggregated_ndarrays) == 2:
+            K, L = aggregated_ndarrays[0], aggregated_ndarrays[1]
+
+            try:
+                L_inv = np.linalg.inv(L)  # Compute the inverse
+                aggregated_matrix = K @ L_inv  # Compute K * L^(-1)
+            except np.linalg.LinAlgError as e:
+                raise ValueError(
+                    "Matrix inversion failed. Ensure that the second matrix is invertible."
+                ) from e
+        else:
+            raise ValueError(
+                "Expected 2 matrices for aggregation, but got: "
+                f"{len(aggregated_ndarrays)}"
+            )
+
+        # Convert the computed matrix back to Flower parameters
+        parameters_aggregated = ndarrays_to_parameters([aggregated_matrix])
+
+        return parameters_aggregated, {}
+
+    ### Dummy functions for evaluation, since our strategy does not require it
+
+    def evaluate(
+        self, server_round: int, parameters: Parameters
+    ) -> Optional[tuple[float, dict[str, Scalar]]]:
+        """Dummy function."""
+        # No evaluation is configured
+        return None
+
+    def configure_evaluate(
+        self, server_round: int, parameters: Parameters, client_manager: ClientManager
+    ) -> list[tuple[ClientProxy, EvaluateIns]]:
+        """Dummy function."""
+        # No evaluation is configured
+        return []
+
+    def aggregate_evaluate(
+        self,
+        server_round: int,
+        results: list[tuple[ClientProxy, EvaluateRes]],
+        failures: list[Union[tuple[ClientProxy, EvaluateRes], BaseException]],
+    ) -> tuple[Optional[float], dict[str, Scalar]]:
+        """Dummy function."""
+        # No evaluation is configured
+        return None, {}
+
+
+class EarlyStopException(Exception):
+    """Raised internally to stop Flower training early."""
+    pass
+
+
+class FedSumEarlyStopping(FedSum):
+    """FedSum with early stopping that mirrors the original PLIER convergence logic.
+
+    Stops when either:
+    1. avg Bdiff < tol  (converged)
+    2. Bdiff_count > 5  (Bdiff not decreasing over last 50 rounds)
+    """
+
+    def __init__(self, *, tol: float = 1e-6, min_rounds: int = 20, **kwargs):
+        super().__init__(**kwargs)
+        self._tol = float(tol)
+        self._min_rounds = int(min_rounds)
+        self._bdiff_history: list[float] = []
+        self._bdiff_count: int = 0
+
+    def aggregate_fit(
+        self,
+        server_round: int,
+        results: list[tuple[ClientProxy, FitRes]],
+        failures: list[Union[tuple[ClientProxy, FitRes], BaseException]],
+    ) -> tuple[Optional[Parameters], dict[str, Scalar]]:
+        aggregated_parameters, aggregated_metrics = FedSum.aggregate_fit(
+            self,
+            server_round,
+            results,
+            failures,
+        )
+
+        if results:
+            bdiffs = [
+                float(fit_res.metrics["Bdiff"])
+                for _, fit_res in results
+                if fit_res.metrics.get("Bdiff", -1) >= 0
+            ]
+            if bdiffs:
+                avg_bdiff = float(np.mean(bdiffs))
+                self._bdiff_history.append(avg_bdiff)
+                i = len(self._bdiff_history) - 1  # 0-based, mirrors loop index
+
+                log(INFO, f"[CONVERGENCE] Round {server_round}: Bdiff = {avg_bdiff:.6f}")
+
+                if server_round <= self._min_rounds:
+                    return aggregated_parameters, aggregated_metrics
+
+                # Condition 1: mirrors `if Bdiff < self.tol: break`
+                if avg_bdiff < self._tol:
+                    log(
+                        INFO,
+                        f"[CONVERGENCE] Converged at round {server_round}: "
+                        f"Bdiff = {avg_bdiff:.6f} < tol = {self._tol}",
+                    )
+                    raise EarlyStopException()
+
+                # Condition 2: mirrors `if i > 52 and Bdiff > Bdiff_trace[i-50]`
+                if i > 52 and avg_bdiff > self._bdiff_history[i - 50]:
+                    self._bdiff_count += 1
+                    log(INFO, f"[CONVERGENCE] Bdiff not decreasing ({self._bdiff_count}/5)")
+                elif self._bdiff_count > 1:
+                    self._bdiff_count -= 1
+
+                if self._bdiff_count > 5:
+                    log(
+                        INFO,
+                        f"[CONVERGENCE] Stopped at round {server_round}: Bdiff not decreasing",
+                    )
+                    raise EarlyStopException()
+
+        return aggregated_parameters, aggregated_metrics

@@ -1,0 +1,26 @@
+name: flower
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12.9
+  - pip
+  - joblib
+  - toml
+  - matplotlib
+  - seaborn
+  - scikit-learn=1.6.1
+  - phe
+  - pyreadr
+  - jupyter
+  - ipywidgets
+  - ipykernel
+  - numpy=1.26.4
+  - pandas=2.2.3
+  
+  - pip:
+      - "flwr[simulation]==1.17.0"
+      - "datasets==2.14.4"
+      - "flwr-datasets==0.1.0"
