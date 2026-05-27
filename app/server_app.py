@@ -1,6 +1,9 @@
 """SecureSum: A Flower for custom secure sum strategy using SecAgg+."""
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from logging import DEBUG, INFO, WARNING
 
@@ -108,3 +111,17 @@ def main(grid: Grid, context: Context) -> None:
     # Final result
     paramsrecord = context.state[MAIN_PARAMS_RECORD]
     ndarrays = ParametersRecord.to_numpy_ndarrays(paramsrecord)
+
+    # Plot errorY convergence curve
+    if strategy._errorY_history:
+        rounds = list(range(1, len(strategy._errorY_history) + 1))
+        plt.figure()
+        plt.plot(rounds, strategy._errorY_history, linewidth=1.5)
+        plt.xlabel("Round")
+        plt.ylabel("errorY (MSE)")
+        plt.title("errorY per round")
+        plt.tight_layout()
+        plot_path = os.path.join(tmp_dir, "errorY_curve.png")
+        plt.savefig(plot_path, dpi=150)
+        plt.close()
+        log(INFO, f"errorY convergence plot saved to {plot_path}")

@@ -270,6 +270,7 @@ class FedSumEarlyStopping(FedSum):
         self._min_rounds = int(min_rounds)
         self._bdiff_history: list[float] = []
         self._bdiff_count: int = 0
+        self._errorY_history: list[float] = []
 
     def aggregate_fit(
         self,
@@ -285,6 +286,14 @@ class FedSumEarlyStopping(FedSum):
         )
 
         if results:
+            errorYs = [
+                float(fit_res.metrics["errorY"])
+                for _, fit_res in results
+                if "errorY" in fit_res.metrics
+            ]
+            if errorYs:
+                self._errorY_history.append(float(np.mean(errorYs)))
+
             bdiffs = [
                 float(fit_res.metrics["Bdiff"])
                 for _, fit_res in results
