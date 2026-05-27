@@ -124,9 +124,6 @@ class FlowerClient(
         self.signatures = signatures  # C columns
         self.samples = samples  # Y columns
 
-        # FIXME: these will get reset at each round
-        self.Bdiff_trace = []
-        self.errorY_trace = []
         self.LVs = [f"LV{i:0{len(str(self.k))}}" for i in range(1, self.k + 1)]
 
         # Check if previously calculated Lambda values exist
@@ -187,62 +184,6 @@ class FlowerClient(
                 return np.array(json.loads(config["aggregated_matrix"]))
 
         i = int(config["round_number"])  # current iteration
-
-        # setting and saving L1 and L2
-        # if self.L1 is None or self.L2 is None:
-
-        # if i == 1:
-        #     for_eigen = self.Y @ self.Y.T
-        #     return [for_eigen], 1, {}
-
-        # elif i == 2:
-        #     # get L1 and L2
-        #     mat = np.array(json.loads(config["for_eigen"]))
-        #     eigenvals = np.linalg.eigvals(mat)
-
-        #     # descending order
-        #     d = np.sort(np.sqrt(np.abs(eigenvals)), kind="quicksort")[::-1]
-
-        #     self.L2 = d[self.k - 1]
-        #     log(INFO, f"[new] L2 is set to {round(self.L2, 7)}")
-
-        #     self.L1 = self.L2 / 2
-        #     log(INFO, f"[new] L1 is set to {round(self.L1, 7)}")
-
-        #     # save L1 and L2
-        #     with open(self.Lambda_path, "w") as f:
-        #         json.dump({"L1": self.L1, "L2": self.L2}, f)
-        #         log(
-        #             INFO,
-        #             f"[i] L1 and L2 saved to {self.Lambda_path}",
-        #         )
-
-        ######################################################################################
-        # NOTE: basically this is still part of the previous round. Normally it is done like this:
-        """
-        for i in range(self.max_iter):
-            if i >= iter_full_start:
-
-                # Step 1 Calculate U using current Z and C
-                self.U = self.solveU()
-
-                # Step 2 Calculate Z using updated U and C
-                self.Z = run_fed()
-            else:
-                # approximation of the Z matrix
-                self.Z = run_fed()
-
-
-            # Step 3 Calculate B using updated Z
-            self.Z[self.Z < 0] = 0
-            old_B = self.B
-
-            B = (
-                np.linalg.inv((self.Z.T @ self.Z) + (self.L2 * np.eye(self.k)))
-                @ self.Z.T
-                @ client.Y
-            )
-        """
 
         # Now, since Z is calculated at the end of the round, we get that updated Z at the beginning of the next round.
         # Therefore, here we get the Upadted Z to calculate B,
@@ -386,14 +327,14 @@ class FlowerClient(
 
 def Z_t_plus_1(
     Y, B, C, U, L1, ncli
-):  # NOTE: put this in the server, so that i dont have to read 2 times toml, and set dirty attributes just to make this work..
+):
 
     k_B = B.shape[0]
     I = np.eye(k_B)
 
     K = Y @ B.T + (
         (L1 / ncli) * (C @ U)
-    )  # if doing this inside server, I have to read C and update U every time
+    )
     L = B @ B.T + ((L1 / ncli) * I)
 
     return K.astype(np.float64), L.astype(np.float64)

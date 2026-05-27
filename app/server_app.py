@@ -108,21 +108,3 @@ def main(grid: Grid, context: Context) -> None:
     # Final result
     paramsrecord = context.state[MAIN_PARAMS_RECORD]
     ndarrays = ParametersRecord.to_numpy_ndarrays(paramsrecord)
-
-    # np.save("testing/Z_federated.npy", ndarrays[0])
-
-    # Print output
-    # log(INFO, "")
-    # log(
-    #     INFO,
-    #     "################################ Final output ################################",
-    # )
-    # log(INFO, "")
-    # log(
-    #     INFO,
-    #     ndarrays[0],
-    # )
-    # log(
-    #     INFO,
-    #     ndarrays[0].shape,
-    # )

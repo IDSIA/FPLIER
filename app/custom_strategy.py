@@ -138,57 +138,7 @@ class FedSum(Strategy):
         self.initial_parameters = None  # Don't keep initial parameters in memory
         return initial_parameters
 
-    # def configure_fit(
-    #     self, server_round: int, parameters: Parameters, client_manager: ClientManager
-    # ) -> list[tuple[ClientProxy, FitIns]]:
-    #     """Configure the next round of training."""
-    #     config = {}
-    #     if self.on_fit_config_fn is not None:
-    #         # Custom fit config function provided
-    #         config = self.on_fit_config_fn(server_round)
-    #     fit_ins = FitIns(parameters, config)
 
-    #     # Sample clients
-    #     sample_size, min_num_clients = self.num_fit_clients(
-    #         client_manager.num_available()
-    #     )
-    #     clients = client_manager.sample(
-    #         num_clients=sample_size, min_num_clients=min_num_clients
-    #     )
-
-    #     # Return client/config pairs
-    #     return [(client, fit_ins) for client in clients]
-
-    # def aggregate_fit(
-    #     self,
-    #     server_round: int,
-    #     results: list[tuple[ClientProxy, FitRes]],
-    #     failures: list[Union[tuple[ClientProxy, FitRes], BaseException]],
-    # ) -> tuple[Optional[Parameters], dict[str, Scalar]]:
-    #     """Aggregate fit results using weighted average."""
-    #     if not results:
-    #         return None, {}
-    #     # Do not aggregate if there are failures and failures are not accepted
-    #     if not self.accept_failures and failures:
-    #         return None, {}
-
-    #     if self.inplace:
-    #         # Does in-place weighted average of results
-    #         aggregated_ndarrays = aggregate_inplace_sum(results)
-    #     else:
-    #         # Convert results
-    #         weights_results = [
-    #             (parameters_to_ndarrays(fit_res.parameters))
-    #             for _, fit_res in results
-    #         ]
-    #         aggregated_ndarrays = aggregate_sum(weights_results)
-
-    #     parameters_aggregated = ndarrays_to_parameters(aggregated_ndarrays)
-
-    #     # Aggregate custom metrics if aggregation fn was provided
-    #     metrics_aggregated = {}
-
-    #     return parameters_aggregated, metrics_aggregated
     def configure_fit(
         self, server_round: int, parameters: Parameters, client_manager: ClientManager
     ) -> list[tuple[ClientProxy, FitIns]]:

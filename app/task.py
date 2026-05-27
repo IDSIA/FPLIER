@@ -51,76 +51,11 @@ def load_data_simulation(
             None
         ].iloc[:, 601:]
 
-    # if client_id == 0:
-    #     dataset = pyreadr.read_r(
-    #         f"data/client_{client_id}/centralized_dataset_demo.RDS"
-    #     )[None].iloc[:, :501]
-    # elif client_id == 1:
-    #     dataset = pyreadr.read_r(
-    #         f"data/client_{client_id}/centralized_dataset_demo.RDS"
-    #     )[None].iloc[:, 501:]
-
     signatures = pyreadr.read_r(f"data/client_{client_id}/signatures_matrix_demo.RDS")[
         None
     ]
 
     return dataset, signatures
-
-
-# def load_data(
-#     partition_id: int,
-#     num_partitions: int,
-#     load_Y_or_C: str,
-#     seed_value: int,
-# ):
-#     """
-#     Loads a partition of the synthetic gene expression dataset.
-
-#     Parameters:
-#         partition_id (int): The ID of the partition to load.
-#         num_partitions (int): Total number of partitions.
-#         num_individuals (int): Number of individuals in the dataset.
-#         num_genes (int): Number of genes in the dataset.
-#         seed_value (int): Random seed for reproducibility.
-
-#     Returns:
-#         pd.DataFrame: The selected partition of the dataset.
-#     """
-#     global partitioner
-
-#     load_Y_or_C = load_Y_or_C.lower().strip()
-#     if load_Y_or_C not in ["y", "c"]:
-#         raise ValueError("load_Y_or_C must be 'Y' or 'C'.")
-
-#     if load_Y_or_C == "y":
-
-#         if partitioner is None:  # Create partitioner only once
-#             dataset = pyreadr.read_r("data/gene_matrix_test.RDS")[None]
-
-#             # Convert the dataset to a pandas DataFrame
-#             dataset = Dataset.from_pandas(
-#                 dataset.T.reset_index()
-#             )  # transposing so that the partitioning works on the columns
-#             # resetting index so that I can restore the signatures names later
-
-#             partitioner = IidPartitioner(num_partitions)
-#             partitioner.dataset = dataset
-
-#         partition = (
-#             partitioner.load_partition(partition_id).with_format("pandas").to_pandas()
-#         ).T  # transposing back to original shape (genes on the rows and samples on columns (partitioned))
-
-#         partition.columns = partition.iloc[0]  # Set the first column as the header
-#         partition = partition[1:]  # Remove the first row
-
-#         # remove the index name
-#         partition.columns.names = [""]
-#         partition.columns.names = [""]
-
-#     elif load_Y_or_C == "c":
-#         partition = pyreadr.read_r("data/signatures_matrix_demo.RDS")[None]
-
-#     return partition
 
 
 class FplierUtils:
@@ -570,31 +505,6 @@ class FplierUtils:
                     self.intercept_path_[i] = model.intercept_
 
                 return self
-
-        # from glmnet import ElasticNet
-        # from glmnet.util import _check_user_lambda, _interpolate_model
-        # from sklearn.utils import check_array
-
-        # class CustomElasticNet(ElasticNet):
-        #     def decision_function(self, X, lamb=None):
-        #         # Copy the original method's logic
-        #         lambda_best = None
-        #         if hasattr(self, "lambda_best_"):
-        #             lambda_best = self.lambda_best_
-
-        #         lamb = _check_user_lambda(self.lambda_path_, lambda_best, lamb)
-        #         coef, intercept = _interpolate_model(
-        #             self.lambda_path_, self.coef_path_, self.intercept_path_, lamb
-        #         )
-
-        #         X = check_array(X, accept_sparse="csr")
-        #         z = X.dot(coef) + intercept
-
-        #         # # Apply fix: only squeeze if the last dimension has size 1
-        #         # if lamb.shape[0] == 1 and z.shape[-1] == 1:
-        #         #     z = z.squeeze(axis=-1)
-
-        #         return z
 
         penalty_factor = np.asarray(penalty_factor)
         # prior_mat_columns = prior_mat.columns
