@@ -16,5 +16,5 @@ For more information on Flower, we refer the reader to [Flower's webpage](https:
 In the `.` directory, use `flwr run` to run a local simulation of the federated process:
 
 ```bash
-flwr run .
+flwr run . --stream
 ```
