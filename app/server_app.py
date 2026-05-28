@@ -21,8 +21,14 @@ from flwr.server import (
 from flwr.server.workflow import DefaultWorkflow, SecAggPlusWorkflow
 from flwr.server.workflow.constant import MAIN_PARAMS_RECORD
 
-from app.task import get_dummy_start
+from app.task import get_dummy_start, load_data_simulation
 from app.custom_strategy import FedSumEarlyStopping, EarlyStopException
+from app.plot import (
+    plot_reconstruction,
+    load_federated_result,
+    load_server_expression,
+    build_centralized_result,
+)
 import os
 import shutil
 
@@ -106,7 +112,7 @@ def main(grid: Grid, context: Context) -> None:
     try:
         workflow(grid, context)
     except EarlyStopException:
-        log(INFO, "Early stopping triggered — training halted.")
+        log(INFO, "Early stopping triggered - training halted.")
 
     # Final result
     paramsrecord = context.state[MAIN_PARAMS_RECORD]
@@ -121,7 +127,25 @@ def main(grid: Grid, context: Context) -> None:
         plt.ylabel("errorY (MSE)")
         plt.title("errorY per round")
         plt.tight_layout()
-        plot_path = os.path.join(tmp_dir, "errorY_curve.png")
+        plot_path = os.path.join("figures", "errorY_curve.png")
         plt.savefig(plot_path, dpi=150)
         plt.close()
         log(INFO, f"errorY convergence plot saved to {plot_path}")
+
+    # Plot reconstruction
+    num_clients = len([f for f in os.listdir(tmp_dir) if f.startswith("B_") and f.endswith(".npy")])
+    fed_Z, fed_B = load_federated_result(num_clients=num_clients, tmp_dir=tmp_dir)
+    server_df = load_server_expression()
+    L2 = float(context.run_config["L2"])
+    dataset, signatures = load_data_simulation(0)
+    data_genes = sorted(set(dataset.index.tolist()) & set(signatures.index.tolist()))
+    centralized = build_centralized_result(fed_Z, data_genes, server_df, L2)
+    plot_reconstruction(
+        exprs_df=server_df,
+        fed_Z=fed_Z,
+        fed_B=fed_B,
+        fed_data_genes=data_genes,
+        centralized=centralized,
+        save=True,
+    )
+    log(INFO, "Reconstruction plot saved to figures/reconstruction_plot.png")

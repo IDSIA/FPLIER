@@ -481,7 +481,7 @@ def preprocess_client_data(gene_data, prior_mat, params):
         u, s, vt = np.linalg.svd(Y, full_matrices=False)
         
         # For np.linalg.svd: s is 1D, vt needs to be transposed to get V
-        print(u.shape, s.shape, vt.shape)
+        # print(u.shape, s.shape, vt.shape)
         svdres = {"u": u, "d": s, "v": vt.T}
 
     v = svdres["v"]
