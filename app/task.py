@@ -12,6 +12,7 @@ import warnings
 import sys
 import traceback
 
+import toml
 import pyreadr
 from datasets import Dataset
 
@@ -37,23 +38,25 @@ def get_random_vector(N=5, shape=None):
 def load_data_simulation(
     client_id: int,
 ):
+    cfg = toml.load("pyproject.toml")
+    n_clients = cfg["tool"]["flwr"]["federations"]["local-simulation"]["options"]["num-supernodes"]
 
-    if client_id == 0:
-        dataset = pyreadr.read_r(f"data/client_{client_id}/gene_matrix_test.RDS")[
-            None
-        ].iloc[:, :301]
-    elif client_id == 1:
-        dataset = pyreadr.read_r(f"data/client_{client_id}/gene_matrix_test.RDS")[
-            None
-        ].iloc[:, 301:601]
-    elif client_id == 2:
-        dataset = pyreadr.read_r(f"data/client_{client_id}/gene_matrix_test.RDS")[
-            None
-        ].iloc[:, 601:]
+    full_df = pyreadr.read_r("data/server/gene_matrix_test.RDS")[None]
+    n_samples = full_df.shape[1]
+    chunk = n_samples // n_clients
 
-    signatures = pyreadr.read_r(f"data/client_{client_id}/signatures_matrix_demo.RDS")[
-        None
-    ]
+    start = client_id * chunk
+    end = start + chunk if client_id < n_clients - 1 else n_samples
+    dataset = full_df.iloc[:, start:end]
+
+    client_dir = f"data/client_{client_id}"
+    sig_path = os.path.join(client_dir, "signatures_matrix_demo.RDS")
+    if not os.path.exists(sig_path):
+        import shutil
+        os.makedirs(client_dir, exist_ok=True)
+        shutil.copy("data/client_0/signatures_matrix_demo.RDS", sig_path)
+
+    signatures = pyreadr.read_r(sig_path)[None]
 
     return dataset, signatures
 

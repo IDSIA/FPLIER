@@ -20,7 +20,7 @@ dependencies = [
     "ipykernel",
     "numpy==1.26.4",
     "pandas==2.2.3",
-    "flwr[simulation]==1.17.0",
+    "flwr[simulation]==1.19.0",
     "datasets==2.14.4",
     "flwr-datasets==0.1.0"
 ]
