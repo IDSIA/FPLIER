@@ -1,5 +1,7 @@
 # FPLIER: Federated Pathway-Level Information ExtractoR
 
+Federated version of [PLIER](https://github.com/wgmao/PLIER).
+
 ## Code
 
 For more information on Flower, we refer the reader to [Flower's webpage](https://flower.ai/docs/framework/tutorial-series-get-started-with-flower-pytorch.html).
