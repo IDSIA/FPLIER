@@ -20,4 +20,7 @@ flwr run . --stream
 
 This will load the data inside `data/client_*` and start the simulated federation. This version uses the complete gene data in `data/server/` and splits it in `options.num-supernodes` parts (the number of clients). At the end of the simulation, 2 images will be created:
 - `figures/errorY_curve.png`: the curve of the difference between original Y matrix and reconstructed one.
+<img src="figures/errorY_curve.png" width="680">
+
 - `figures/reconstruction_plot.png`: A spearman correlation curve comparing the federated version to the centralized correlation.
+<img src="figures/reconstruction_plot.png" width="680">
